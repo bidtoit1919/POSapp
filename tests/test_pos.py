@@ -47,5 +47,9 @@ class PosTests(unittest.TestCase):
     def test_owner_can_sign_in(self):
         self.assertIsNotNone(self.service.authenticate("owner", "long-safe-password"))
         self.assertIsNone(self.service.authenticate("owner", "not-the-password"))
+    def test_migration_is_safe_on_an_existing_database(self):
+        migrate(self.db)
+        with self.db.connect() as c:
+            self.assertIsNotNone(c.execute("SELECT 1 FROM shops WHERE id=?", (self.shop,)).fetchone())
 
 if __name__ == "__main__": unittest.main()
