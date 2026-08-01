@@ -22,11 +22,11 @@ class PosService:
     def __init__(self, db: Database, shop_id: str): self.db, self.shop_id = db, shop_id
 
     def add_product(self, name: str, sku: str, selling_price_minor: int, *, quantity: int = 0,
-                    barcode: str | None = None, tax_bps: int = 0, low_stock_threshold: int = 0) -> str:
-        if not name.strip() or not sku.strip() or selling_price_minor < 0 or quantity < 0: raise PosError("Invalid product details")
+                    barcode: str | None = None, tax_bps: int = 0, low_stock_threshold: int = 0, buying_price_minor: int = 0) -> str:
+        if not name.strip() or not sku.strip() or min(selling_price_minor, buying_price_minor, quantity, tax_bps, low_stock_threshold) < 0 or tax_bps > 10000: raise PosError("Invalid product details")
         product_id, now = new_id(), utc_now()
         with self.db.transaction() as c:
-            c.execute("INSERT INTO products(id,name,sku,barcode,selling_price_minor,tax_bps,low_stock_threshold,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)", (product_id,name.strip(),sku.strip(),barcode,selling_price_minor,tax_bps,low_stock_threshold,now,now))
+            c.execute("INSERT INTO products(id,name,sku,barcode,buying_price_minor,selling_price_minor,tax_bps,low_stock_threshold,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)", (product_id,name.strip(),sku.strip(),barcode.strip() if barcode else None,buying_price_minor,selling_price_minor,tax_bps,low_stock_threshold,now,now))
             c.execute("INSERT INTO inventory(product_id,quantity,updated_at) VALUES(?,?,?)", (product_id,quantity,now))
             if quantity:
                 c.execute("INSERT INTO stock_movements VALUES(?,?,?,?,?,?,?,?)", (new_id(),product_id,quantity,"intake",None,"opening stock",None,now))
@@ -36,6 +36,35 @@ class PosService:
         term = f"%{query.strip()}%"
         with self.db.connect() as c:
             return [dict(row) for row in c.execute("SELECT p.id,p.name,p.sku,p.barcode,p.selling_price_minor,p.tax_bps,i.quantity FROM products p JOIN inventory i ON i.product_id=p.id WHERE p.active=1 AND (p.name LIKE ? OR p.sku LIKE ? OR p.barcode LIKE ?) ORDER BY p.name LIMIT ?", (term,term,term,limit))]
+
+    def find_product_by_code(self, code: str) -> dict | None:
+        """Barcode scanners normally type a code then press Enter; SKU is a useful fallback."""
+        with self.db.connect() as c:
+            row = c.execute("SELECT p.id,p.name,p.sku,p.barcode,p.selling_price_minor,p.tax_bps,i.quantity FROM products p JOIN inventory i ON i.product_id=p.id WHERE p.active=1 AND (p.barcode=? OR p.sku=?)", (code.strip(), code.strip())).fetchone()
+        return dict(row) if row else None
+
+    def list_inventory(self, query: str = "") -> list[dict]:
+        term = f"%{query.strip()}%"
+        with self.db.connect() as c:
+            return [dict(row) for row in c.execute("""SELECT p.id,p.name,p.sku,p.barcode,p.unit,p.buying_price_minor,p.selling_price_minor,p.tax_bps,p.low_stock_threshold,p.active,i.quantity
+                FROM products p JOIN inventory i ON i.product_id=p.id
+                WHERE p.name LIKE ? OR p.sku LIKE ? OR COALESCE(p.barcode,'') LIKE ? ORDER BY p.name""", (term, term, term))]
+
+    @staticmethod
+    def _require_owner(conn, actor_id: str) -> None:
+        row = conn.execute("SELECT role FROM users WHERE id=? AND active=1", (actor_id,)).fetchone()
+        if not row or row["role"] != "owner": raise PosError("Owner permission required")
+
+    def update_product(self, actor_id: str, product_id: str, *, name: str, sku: str, barcode: str | None,
+                       selling_price_minor: int, buying_price_minor: int = 0, tax_bps: int = 0,
+                       low_stock_threshold: int = 0) -> None:
+        if not name.strip() or not sku.strip() or min(selling_price_minor, buying_price_minor, tax_bps, low_stock_threshold) < 0 or tax_bps > 10000:
+            raise PosError("Invalid product details")
+        with self.db.transaction() as c:
+            self._require_owner(c, actor_id)
+            result = c.execute("""UPDATE products SET name=?,sku=?,barcode=?,selling_price_minor=?,buying_price_minor=?,tax_bps=?,low_stock_threshold=?,updated_at=?
+                WHERE id=?""", (name.strip(), sku.strip(), barcode.strip() or None, selling_price_minor, buying_price_minor, tax_bps, low_stock_threshold, utc_now(), product_id))
+            if result.rowcount != 1: raise PosError("Product was not found")
 
     def authenticate(self, username: str, password: str) -> dict | None:
         with self.db.connect() as c:
@@ -95,6 +124,7 @@ class PosService:
         if not delta or reason not in {"damage","expiry","correction","intake"}: raise PosError("Invalid adjustment")
         now = utc_now()
         with self.db.transaction() as c:
+            self._require_owner(c, actor_id)
             row = c.execute("SELECT quantity FROM inventory WHERE product_id=?", (product_id,)).fetchone()
             if not row or row[0] + delta < 0: raise PosError("Adjustment would make stock negative")
             c.execute("UPDATE inventory SET quantity=quantity+?,updated_at=? WHERE product_id=?", (delta,now,product_id))

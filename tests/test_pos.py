@@ -47,6 +47,14 @@ class PosTests(unittest.TestCase):
     def test_owner_can_sign_in(self):
         self.assertIsNotNone(self.service.authenticate("owner", "long-safe-password"))
         self.assertIsNone(self.service.authenticate("owner", "not-the-password"))
+    def test_barcode_lookup_and_inventory_editing(self):
+        product = self.service.add_product("Tea", "TEA-1", 5000, quantity=3, barcode="8901234567890", low_stock_threshold=2)
+        self.assertEqual(self.service.find_product_by_code("8901234567890")["id"], product)
+        self.assertEqual(self.service.find_product_by_code("TEA-1")["id"], product)
+        self.service.update_product(self.owner, product, name="Premium Tea", sku="TEA-2", barcode="8901234567891", selling_price_minor=5500, buying_price_minor=4000, tax_bps=500, low_stock_threshold=4)
+        self.service.adjust_stock(self.owner, product, 7, "intake", "delivery received")
+        updated = next(row for row in self.service.list_inventory() if row["id"] == product)
+        self.assertEqual((updated["name"], updated["quantity"], updated["selling_price_minor"]), ("Premium Tea", 10, 5500))
     def test_migration_is_safe_on_an_existing_database(self):
         migrate(self.db)
         with self.db.connect() as c:
