@@ -41,6 +41,8 @@ python scripts/package.py
 
 The first launch creates a database under the platform data directory and an owner account. The application itself clearly displays the temporary owner password and sign-in instructions; it is no longer hidden in a terminal.
 
+If the owner password is lost, close ShopPOS and run `python -m posdesk.reset_owner_password` on that shop computer. It prompts privately for a new password and never displays it.
+
 ## Installation and desktop launch
 
 Build on each target operating system with `python scripts/package.py`. It produces sibling `dist/ShopPOS` and `dist/installer` folders. On Windows, double-click `dist/installer/install-windows-desktop.bat`; on Linux, run `dist/installer/install-linux-desktop.sh` once (or have the installer do so). Both create a `ShopPOS` desktop shortcut that targets the executable in its installed folder, show confirmation, and open the app once. After that, employees only double-click the desktop icon.

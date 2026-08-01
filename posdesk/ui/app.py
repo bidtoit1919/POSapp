@@ -34,6 +34,7 @@ class PosApp(tk.Tk):
         ttk.Label(card, text="Password").pack(anchor="w")
         self.password = ttk.Entry(card, width=36, show="●", font=("TkDefaultFont", 12)); self.password.pack(fill="x", pady=(2, 16)); self.password.bind("<Return>", lambda _: self._sign_in())
         ttk.Button(card, text="Sign in", command=self._sign_in).pack(anchor="e")
+        ttk.Label(card, text="Forgot the owner password? Ask the technical owner to run the local password-recovery utility.", foreground="#555", wraplength=420).pack(anchor="w", pady=(16, 0))
         self.password.focus_set()
 
     def _sign_in(self) -> None:
