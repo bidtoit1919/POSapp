@@ -39,11 +39,11 @@ python -m posdesk.main
 python scripts/package.py
 ```
 
-The first launch creates a database under the platform data directory and an owner account. The temporary first-run password is shown once in the console only for development; a polished onboarding screen should require it to be changed before normal use.
+The first launch creates a database under the platform data directory and an owner account. The application itself clearly displays the temporary owner password and sign-in instructions; it is no longer hidden in a terminal.
 
 ## Installation and desktop launch
 
-Build on each target operating system with `python scripts/package.py`. It produces sibling `dist/ShopPOS` and `dist/installer` folders. On Windows, double-click `dist/installer/install-windows-desktop.bat`; on Linux, run `dist/installer/install-linux-desktop.sh` once (or have the installer do so). Both create a `ShopPOS` desktop shortcut that targets the executable in its installed folder. After that, employees only double-click the desktop icon.
+Build on each target operating system with `python scripts/package.py`. It produces sibling `dist/ShopPOS` and `dist/installer` folders. On Windows, double-click `dist/installer/install-windows-desktop.bat`; on Linux, run `dist/installer/install-linux-desktop.sh` once (or have the installer do so). Both create a `ShopPOS` desktop shortcut that targets the executable in its installed folder, show confirmation, and open the app once. After that, employees only double-click the desktop icon.
 
 To enable HTTPS sync, an administrator copies [sync-config.example.json](/home/ubuntu/shopPOS/sync-config.example.json) to the ShopPOS data directory as `sync-config.json`, replaces the certificate paths and peer shop IDs, and restarts the app. The service refuses to start without a server certificate, key, CA trust root, and a client certificate from that CA.
 

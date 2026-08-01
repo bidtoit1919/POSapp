@@ -17,8 +17,6 @@ def main() -> None:
     db = Database(settings.database_path); migrate(db)
     generated = secrets.token_urlsafe(12)
     shop_id, first_password = seed_shop(db, settings.shop_name, generated)
-    if first_password: print(f"First-run owner password (change it immediately): {generated}")
-    with db.connect() as conn: owner_id = conn.execute("SELECT id FROM users WHERE username='owner'").fetchone()[0]
     # Sync remains unavailable-by-default until an administrator provides mTLS files and config.
     from posdesk.config import SyncSettings
     sync = None; sync_stop = None
@@ -31,7 +29,7 @@ def main() -> None:
         # A bad peer configuration must never stop local billing.
         logging.basicConfig(filename=settings.data_dir / "shoppos.log", level=logging.INFO)
         logging.exception("Sync disabled; local POS remains available: %s", exc)
-    PosApp(PosService(db, shop_id), owner_id).mainloop()
+    PosApp(PosService(db, shop_id), first_password).mainloop()
     if sync_stop: sync_stop.set()
     if sync: sync[0].shutdown()
 

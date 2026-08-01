@@ -44,5 +44,8 @@ class PosTests(unittest.TestCase):
         with self.db.connect() as c:
             self.assertEqual(c.execute("SELECT COUNT(*) FROM remote_sales").fetchone()[0], 1)
             self.assertEqual(c.execute("SELECT COUNT(*) FROM sales").fetchone()[0], 0)
+    def test_owner_can_sign_in(self):
+        self.assertIsNotNone(self.service.authenticate("owner", "long-safe-password"))
+        self.assertIsNone(self.service.authenticate("owner", "not-the-password"))
 
 if __name__ == "__main__": unittest.main()

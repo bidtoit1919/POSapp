@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from posdesk.data.database import Database
-from .auth import hash_password
+from .auth import hash_password, verify_password
 from .common import business_date, new_id, utc_now
 
 
@@ -36,6 +36,12 @@ class PosService:
         term = f"%{query.strip()}%"
         with self.db.connect() as c:
             return [dict(row) for row in c.execute("SELECT p.id,p.name,p.sku,p.barcode,p.selling_price_minor,p.tax_bps,i.quantity FROM products p JOIN inventory i ON i.product_id=p.id WHERE p.active=1 AND (p.name LIKE ? OR p.sku LIKE ? OR p.barcode LIKE ?) ORDER BY p.name LIMIT ?", (term,term,term,limit))]
+
+    def authenticate(self, username: str, password: str) -> dict | None:
+        with self.db.connect() as c:
+            row = c.execute("SELECT id,display_name,role,password_hash FROM users WHERE username=? AND active=1", (username.strip(),)).fetchone()
+        if not row or not verify_password(password, row["password_hash"]): return None
+        return {"id": row["id"], "display_name": row["display_name"], "role": row["role"]}
 
     def create_customer(self, name: str, phone: str | None = None, preferred_discount_bps: int = 0) -> str:
         if not name.strip(): raise PosError("Customer name is required")
