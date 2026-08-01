@@ -1,0 +1,10 @@
+{
+  "enabled": false,
+  "host": "0.0.0.0",
+  "port": 8443,
+  "certificate": "/absolute/path/to/shop-server.crt",
+  "private_key": "/absolute/path/to/shop-server.key",
+  "ca_certificate": "/absolute/path/to/shops-ca.crt",
+  "peer_url": "https://other-shop.example.internal:8443",
+  "allowed_peer_shop_ids": ["peer-shop-uuid"]
+}
