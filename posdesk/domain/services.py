@@ -48,7 +48,7 @@ class PosService:
         with self.db.connect() as c:
             return [dict(row) for row in c.execute("""SELECT p.id,p.name,p.sku,p.barcode,p.unit,p.buying_price_minor,p.selling_price_minor,p.tax_bps,p.low_stock_threshold,p.active,i.quantity
                 FROM products p JOIN inventory i ON i.product_id=p.id
-                WHERE p.name LIKE ? OR p.sku LIKE ? OR COALESCE(p.barcode,'') LIKE ? ORDER BY p.name""", (term, term, term))]
+                WHERE p.active=1 AND (p.name LIKE ? OR p.sku LIKE ? OR COALESCE(p.barcode,'') LIKE ?) ORDER BY p.name""", (term, term, term))]
 
     @staticmethod
     def _require_owner(conn, actor_id: str) -> None:
@@ -65,6 +65,13 @@ class PosService:
             result = c.execute("""UPDATE products SET name=?,sku=?,barcode=?,selling_price_minor=?,buying_price_minor=?,tax_bps=?,low_stock_threshold=?,updated_at=?
                 WHERE id=?""", (name.strip(), sku.strip(), barcode.strip() or None, selling_price_minor, buying_price_minor, tax_bps, low_stock_threshold, utc_now(), product_id))
             if result.rowcount != 1: raise PosError("Product was not found")
+
+    def archive_product(self, actor_id: str, product_id: str) -> None:
+        """Remove a discontinued product from daily use without corrupting old receipts."""
+        with self.db.transaction() as c:
+            self._require_owner(c, actor_id)
+            result = c.execute("UPDATE products SET active=0,updated_at=? WHERE id=? AND active=1", (utc_now(), product_id))
+            if result.rowcount != 1: raise PosError("Product was not found or is already deleted")
 
     def authenticate(self, username: str, password: str) -> dict | None:
         with self.db.connect() as c:

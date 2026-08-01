@@ -142,7 +142,7 @@ class PosApp(tk.Tk):
         ttk.Button(top, text="+ Add product", command=lambda: self._product_dialog()).pack(side="right")
         ttk.Label(root, text="Search product, SKU, or barcode").pack(anchor="w", pady=(14, 2)); self.inventory_search = ttk.Entry(root, font=("TkDefaultFont", 12)); self.inventory_search.pack(fill="x"); self.inventory_search.bind("<KeyRelease>", lambda _event: self._refresh_inventory())
         self.inventory_view = self._tree(root, ("name", "sku", "barcode", "stock", "price", "low"), ("Product", "SKU", "Barcode", "On hand", "Selling price", "Low-stock at"), (290, 150, 170, 100, 130, 110)); self.inventory_view.pack(fill="both", expand=True, pady=8); self.inventory_view.tag_configure("low", foreground="#b00020"); self.inventory_view.bind("<Double-1>", lambda _event: self._edit_selected_product())
-        bottom = ttk.Frame(root); bottom.pack(fill="x"); ttk.Button(bottom, text="Edit product", command=self._edit_selected_product).pack(side="left"); ttk.Button(bottom, text="Adjust stock", command=self._stock_adjust_dialog).pack(side="left", padx=8); ttk.Label(bottom, text="Tip: double-click a row to edit product details.", foreground="#555").pack(side="right")
+        bottom = ttk.Frame(root); bottom.pack(fill="x"); ttk.Button(bottom, text="Edit product", command=self._edit_selected_product).pack(side="left"); ttk.Button(bottom, text="Adjust stock", command=self._stock_adjust_dialog).pack(side="left", padx=8); ttk.Button(bottom, text="Delete product", command=self._delete_selected_product).pack(side="left"); ttk.Label(bottom, text="Tip: double-click a row to edit product details.", foreground="#555").pack(side="right")
         self._refresh_inventory()
 
     def _refresh_inventory(self) -> None:
@@ -181,6 +181,17 @@ class PosApp(tk.Tk):
     def _edit_selected_product(self) -> None:
         product = self._selected_inventory()
         if product: self._product_dialog(product)
+
+    def _delete_selected_product(self) -> None:
+        product = self._selected_inventory()
+        if not product: return
+        if not messagebox.askyesno("Delete product", f"Remove “{product['name']}” from Inventory and Billing?\n\nPast sales will remain available in reports."):
+            return
+        try:
+            self.service.archive_product(self.cashier_id, product["id"])
+        except PosError as exc:
+            messagebox.showerror("Cannot delete product", str(exc)); return
+        self._refresh_inventory()
 
     def _stock_adjust_dialog(self) -> None:
         product = self._selected_inventory()

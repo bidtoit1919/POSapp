@@ -55,6 +55,10 @@ class PosTests(unittest.TestCase):
         self.service.adjust_stock(self.owner, product, 7, "intake", "delivery received")
         updated = next(row for row in self.service.list_inventory() if row["id"] == product)
         self.assertEqual((updated["name"], updated["quantity"], updated["selling_price_minor"]), ("Premium Tea", 10, 5500))
+    def test_archived_product_is_not_sellable_or_listed(self):
+        self.service.archive_product(self.owner, self.product)
+        self.assertIsNone(self.service.find_product_by_code("RICE-1"))
+        self.assertNotIn(self.product, {item["id"] for item in self.service.list_inventory()})
     def test_migration_is_safe_on_an_existing_database(self):
         migrate(self.db)
         with self.db.connect() as c:
