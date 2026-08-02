@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from datetime import datetime
 import tkinter as tk
 from tkinter import messagebox, ttk
 
@@ -54,6 +55,7 @@ class PosApp(tk.Tk):
         ttk.Label(top, text=f"Signed in: {self.user['display_name']} ({self.user['role']})").pack(side="right")
         notebook = ttk.Notebook(root); notebook.pack(fill="both", expand=True, pady=(14, 0))
         billing = ttk.Frame(notebook, padding=14); notebook.add(billing, text="  Billing  "); self._build_billing(billing)
+        sales = ttk.Frame(notebook, padding=14); notebook.add(sales, text="  Previous sales  "); self._build_sales(sales)
         if self.user["role"] == "owner":
             inventory = ttk.Frame(notebook, padding=14); notebook.add(inventory, text="  Inventory  "); self._build_inventory(inventory)
 
@@ -70,10 +72,10 @@ class PosApp(tk.Tk):
         ttk.Label(root, text="A USB barcode scanner works like a keyboard: scan the item and it is added automatically.", foreground="#555").pack(anchor="w", pady=(0, 5))
         self.results = self._tree(root, ("name", "sku", "barcode", "stock", "price"), ("Product", "SKU", "Barcode", "Stock", "Price"), (300, 150, 180, 80, 110)); self.results.pack(fill="x"); self.results.bind("<Double-1>", lambda _event: self._add_selected())
         ttk.Label(root, text="Current sale", font=("TkDefaultFont", 13, "bold")).pack(anchor="w", pady=(16, 4))
-        self.cart_view = self._tree(root, ("name", "sku", "price", "qty", "total"), ("Product", "SKU", "Unit price", "Quantity", "Line total"), (390, 160, 130, 110, 150)); self.cart_view.pack(fill="both", expand=True); self.cart_view.bind("<<TreeviewSelect>>", self._cart_selected)
+        self.cart_view = self._tree(root, ("name", "sku", "price", "qty", "total"), ("Product", "SKU", "Unit price", "Quantity", "Line total"), (390, 160, 130, 110, 150)); self.cart_view.pack(fill="both", expand=True); self.cart_view.bind("<<TreeviewSelect>>", self._cart_selected); self.cart_view.bind("<Double-1>", self._edit_cart_quantity)
         cart_tools = ttk.Frame(root); cart_tools.pack(fill="x", pady=8)
-        ttk.Label(cart_tools, text="Selected quantity:").pack(side="left"); self.quantity = tk.StringVar(value="1"); ttk.Spinbox(cart_tools, from_=1, to=9999, textvariable=self.quantity, width=8).pack(side="left", padx=6)
-        ttk.Button(cart_tools, text="Update quantity", command=self._update_quantity).pack(side="left"); ttk.Button(cart_tools, text="Remove item", command=self._remove).pack(side="left", padx=8)
+        ttk.Label(cart_tools, text="Selected quantity:").pack(side="left"); self.quantity = tk.StringVar(value="1"); self.quantity_box = ttk.Spinbox(cart_tools, from_=1, to=9999, textvariable=self.quantity, width=8); self.quantity_box.pack(side="left", padx=6); self.quantity_box.bind("<Return>", lambda _event: self._update_quantity())
+        ttk.Button(cart_tools, text="−", width=3, command=lambda: self._change_quantity(-1)).pack(side="left"); ttk.Button(cart_tools, text="+", width=3, command=lambda: self._change_quantity(1)).pack(side="left", padx=(3, 8)); ttk.Button(cart_tools, text="Save quantity", command=self._update_quantity).pack(side="left"); ttk.Button(cart_tools, text="Remove item", command=self._remove).pack(side="left", padx=8)
         self.total_label = ttk.Label(cart_tools, text="Total: ₹0.00", font=("TkDefaultFont", 18, "bold")); self.total_label.pack(side="right")
         pay = ttk.Frame(root); pay.pack(fill="x")
         ttk.Label(pay, text="Complete sale:", font=("TkDefaultFont", 12, "bold")).pack(side="left")
@@ -107,35 +109,81 @@ class PosApp(tk.Tk):
     def _cart_selected(self, _event=None) -> None:
         selected = self.cart_view.selection()
         if selected:
+            self.selected_cart_id = selected[0]
             line = next((line for line in self.cart if line.product_id == selected[0]), None)
             if line: self.quantity.set(str(line.quantity))
 
     def _update_quantity(self) -> None:
-        selected = self.cart_view.selection()
+        selected = self.cart_view.selection() or ((self.selected_cart_id,) if hasattr(self, "selected_cart_id") else ())
         try: quantity = int(self.quantity.get())
         except ValueError: messagebox.showerror("Invalid quantity", "Enter a whole number greater than zero."); return
         if not selected or quantity < 1: messagebox.showerror("Invalid quantity", "Select an item and enter a whole number greater than zero."); return
         for line in self.cart:
             if line.product_id == selected[0]: line.quantity = quantity; break
-        self._refresh_cart()
+        self._refresh_cart(selected[0])
 
-    def _refresh_cart(self) -> None:
+    def _change_quantity(self, delta: int) -> None:
+        try: self.quantity.set(str(max(1, int(self.quantity.get()) + delta)))
+        except ValueError: self.quantity.set("1")
+        self._update_quantity()
+
+    def _edit_cart_quantity(self, _event=None) -> None:
+        """Double-clicking any cart row puts the cursor in the quantity field."""
+        self._cart_selected(); self.quantity_box.focus_set(); self.quantity_box.selection_range(0, "end")
+
+    def _refresh_cart(self, selected_id: str | None = None) -> None:
         self.cart_view.delete(*self.cart_view.get_children()); total = 0
         for line in self.cart:
             product = self.cart_products[line.product_id]; base = product["selling_price_minor"] * line.quantity; tax = (base * product["tax_bps"] + 5000) // 10000; line_total = base + tax; total += line_total
             self.cart_view.insert("", "end", iid=line.product_id, values=(product["name"], product["sku"], money(product["selling_price_minor"]), line.quantity, money(line_total)))
         self.total_label.config(text=f"Total: {money(total)}")
+        if selected_id and selected_id in self.cart_view.get_children():
+            self.selected_cart_id = selected_id; self.cart_view.selection_set(selected_id); self.cart_view.focus(selected_id)
 
     def _remove(self) -> None:
         selected = self.cart_view.selection()
-        if selected: self.cart = [line for line in self.cart if line.product_id != selected[0]]; self.cart_products.pop(selected[0], None); self._refresh_cart()
+        if selected: self.cart = [line for line in self.cart if line.product_id != selected[0]]; self.cart_products.pop(selected[0], None); self.selected_cart_id = None; self._refresh_cart()
 
     def _checkout(self, method: str) -> None:
         try:
             receipt = self.service.complete_sale(self.cashier_id, self.cart, method)
             messagebox.showinfo("Sale completed", f"Bill {receipt['bill_number']}\nTotal {money(receipt['total_minor'])}")
             self.cart.clear(); self.cart_products.clear(); self._refresh_cart(); self.search.focus_set(); self._refresh_inventory()
+            self._refresh_sales()
         except PosError as exc: messagebox.showerror("Cannot complete sale", str(exc))
+
+    def _build_sales(self, root: ttk.Frame) -> None:
+        top = ttk.Frame(root); top.pack(fill="x")
+        ttk.Label(top, text="Previous sales / bills", font=("TkDefaultFont", 15, "bold")).pack(side="left")
+        self.sales_filter = tk.StringVar(value="Today")
+        selector = ttk.Combobox(top, textvariable=self.sales_filter, values=("Today", "All bills"), state="readonly", width=12); selector.pack(side="right"); selector.bind("<<ComboboxSelected>>", lambda _event: self._refresh_sales())
+        ttk.Button(top, text="Refresh", command=self._refresh_sales).pack(side="right", padx=8)
+        ttk.Label(root, text="Bills are ordered newest first by date and time. Select a bill to see its full contents.", foreground="#555").pack(anchor="w", pady=(8, 5))
+        self.sales_view = self._tree(root, ("bill", "date", "time", "cashier", "customer", "payment", "total"), ("Bill no.", "Date", "Time", "Cashier", "Customer", "Payment", "Total"), (150, 105, 100, 145, 150, 100, 120)); self.sales_view.pack(fill="both", expand=True); self.sales_view.bind("<<TreeviewSelect>>", self._show_sale_details)
+        ttk.Label(root, text="Bill contents", font=("TkDefaultFont", 12, "bold")).pack(anchor="w", pady=(10, 3))
+        self.sale_lines_view = self._tree(root, ("name", "sku", "price", "qty", "tax", "total"), ("Product", "SKU", "Unit price", "Qty", "Tax", "Line total"), (330, 150, 120, 80, 110, 140)); self.sale_lines_view.pack(fill="x")
+        self.sale_summary = ttk.Label(root, text="Select a bill above to view its details.", font=("TkDefaultFont", 11)); self.sale_summary.pack(anchor="e", pady=(5, 0))
+        self._refresh_sales()
+
+    def _refresh_sales(self) -> None:
+        if not hasattr(self, "sales_view"): return
+        day = datetime.now().date().isoformat() if self.sales_filter.get() == "Today" else None
+        self.sales_rows = {row["id"]: row for row in self.service.list_sales(day)}
+        self.sales_view.delete(*self.sales_view.get_children()); self.sale_lines_view.delete(*self.sale_lines_view.get_children())
+        for row in self.sales_rows.values():
+            time = row["sold_at"].replace("T", " ").replace("Z", " UTC")
+            self.sales_view.insert("", "end", iid=row["id"], values=(row["bill_number"], row["business_date"], time[11:], row["cashier"], row["customer"] or "Walk-in", row["payment_method"].upper(), money(row["total_minor"])))
+        self.sale_summary.config(text=f"{len(self.sales_rows)} bill(s) shown")
+
+    def _show_sale_details(self, _event=None) -> None:
+        selected = self.sales_view.selection()
+        if not selected: return
+        try: sale, lines = self.service.sale_details(selected[0])
+        except PosError as exc: messagebox.showerror("Cannot open bill", str(exc)); return
+        self.sale_lines_view.delete(*self.sale_lines_view.get_children())
+        for line in lines:
+            self.sale_lines_view.insert("", "end", values=(line["product_name"], line["sku"], money(line["unit_price_minor"]), line["quantity"], money(line["tax_minor"]), money(line["line_total_minor"])))
+        self.sale_summary.config(text=f"Bill {sale['bill_number']}  •  {sale['customer']}  •  {sale['payment_method'].upper()}  •  Total {money(sale['total_minor'])}")
 
     def _build_inventory(self, root: ttk.Frame) -> None:
         top = ttk.Frame(root); top.pack(fill="x"); ttk.Label(top, text="Inventory management", font=("TkDefaultFont", 15, "bold")).pack(side="left")

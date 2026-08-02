@@ -86,6 +86,29 @@ class PosService:
             c.execute("INSERT INTO customers(id,name,phone,preferred_discount_bps,revision_at) VALUES(?,?,?,?,?)", (customer_id,name.strip(),phone or None,preferred_discount_bps,now))
         return customer_id
 
+    def list_sales(self, business_day: str | None = None, limit: int = 500) -> list[dict]:
+        """Completed local bills, newest first, for the Previous Sales screen."""
+        sql = """SELECT s.id,s.bill_number,s.business_date,s.sold_at,u.display_name AS cashier,
+            COALESCE(c.name,'') AS customer,p.method AS payment_method,s.total_minor
+            FROM sales s JOIN users u ON u.id=s.cashier_id JOIN payments p ON p.sale_id=s.id
+            LEFT JOIN customers c ON c.id=s.customer_id WHERE s.shop_id=? AND s.status='completed'"""
+        values: list[object] = [self.shop_id]
+        if business_day:
+            sql += " AND s.business_date=?"; values.append(business_day)
+        sql += " ORDER BY s.sold_at DESC, s.bill_number DESC LIMIT ?"; values.append(limit)
+        with self.db.connect() as c:
+            return [dict(row) for row in c.execute(sql, values)]
+
+    def sale_details(self, sale_id: str) -> tuple[dict, list[dict]]:
+        with self.db.connect() as c:
+            sale = c.execute("""SELECT s.id,s.bill_number,s.business_date,s.sold_at,u.display_name AS cashier,
+                COALESCE(c.name,'Walk-in') AS customer,s.subtotal_minor,s.discount_minor,s.tax_minor,s.total_minor,p.method AS payment_method
+                FROM sales s JOIN users u ON u.id=s.cashier_id JOIN payments p ON p.sale_id=s.id
+                LEFT JOIN customers c ON c.id=s.customer_id WHERE s.id=? AND s.shop_id=?""", (sale_id, self.shop_id)).fetchone()
+            if not sale: raise PosError("Bill was not found")
+            lines = c.execute("SELECT product_name,sku,quantity,unit_price_minor,discount_minor,tax_minor,line_total_minor FROM sale_lines WHERE sale_id=? ORDER BY rowid", (sale_id,)).fetchall()
+        return dict(sale), [dict(line) for line in lines]
+
     def complete_sale(self, cashier_id: str, lines: Iterable[CartLine], payment_method: str,
                       customer_id: str | None = None) -> dict:
         lines = list(lines)

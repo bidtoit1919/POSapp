@@ -59,6 +59,13 @@ class PosTests(unittest.TestCase):
         self.service.archive_product(self.owner, self.product)
         self.assertIsNone(self.service.find_product_by_code("RICE-1"))
         self.assertNotIn(self.product, {item["id"] for item in self.service.list_inventory()})
+    def test_previous_sales_are_newest_first_with_bill_details(self):
+        first = self.service.complete_sale(self.owner, [CartLine(self.product, 1)], "cash")
+        second = self.service.complete_sale(self.owner, [CartLine(self.product, 1)], "upi")
+        bills = self.service.list_sales()
+        self.assertEqual([item["bill_number"] for item in bills], [second["bill_number"], first["bill_number"]])
+        sale, lines = self.service.sale_details(first["sale_id"])
+        self.assertEqual((sale["bill_number"], lines[0]["quantity"], lines[0]["product_name"]), (first["bill_number"], 1, "Rice"))
     def test_migration_is_safe_on_an_existing_database(self):
         migrate(self.db)
         with self.db.connect() as c:
